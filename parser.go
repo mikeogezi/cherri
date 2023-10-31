@@ -1044,7 +1044,7 @@ func collectString() string {
 			case '\\':
 				collection.WriteRune('\\')
 			default:
-				// handle other cases or throw an error if needed
+				collection.WriteRune(char)  // Add just the unfamiliar character
 			}
 			escaped = false
 		} else {
