@@ -1,4 +1,4 @@
-module github.com/electrikmilk/cherri
+module github.com/mikeogezi/cherri
 
 go 1.21
 
