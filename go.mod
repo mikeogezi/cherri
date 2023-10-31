@@ -1,4 +1,5 @@
-module github.com/mikeogezi/cherri
+module github.com/electrikmilk/cherri
+replace github.com/electrikmilk/cherri => github.com/mikeogezi/cherri
 
 go 1.21
 
