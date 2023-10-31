@@ -1040,6 +1040,8 @@ func collectString() string {
 				collection.WriteRune('\t')
 			case 'r':
 				collection.WriteRune('\r')
+			case '\':
+				collection.WriteRune('\\')
 			}
 			advanceTimes(2)
 			continue
