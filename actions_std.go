@@ -3082,6 +3082,9 @@ func scriptingActions() {
 			},
 		},
 	}
+	actions["listen"] = &actionDefinition{
+		identifier: "dictatetext",
+	}
 	actions["chooseFromList"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
