@@ -1031,26 +1031,30 @@ func collectString() string {
 	var collection strings.Builder
 	escaped := false
 	for char != -1 {
-		if char == '\\' {
-			if escaped {
-				collection.WriteRune('\\')
-				escaped = false
-			} else {
-				escaped = true
-			}
-		} else if char == '"' {
-			if escaped {
+		if escaped {
+			switch char {
+			case '"':
 				collection.WriteRune('"')
-				escaped = false
-			} else {
-				break
-			}
-		} else {
-			if escaped {
+			case 'n':
+				collection.WriteRune('\n')
+			case 't':
+				collection.WriteRune('\t')
+			case 'r':
+				collection.WriteRune('\r')
+			case '\\':
 				collection.WriteRune('\\')
-				escaped = false
+			default:
+				// handle other cases or throw an error if needed
 			}
-			collection.WriteRune(char)
+			escaped = false
+		} else {
+			if char == '\\' {
+				escaped = true
+			} else if char == '"' {
+				break
+			} else {
+				collection.WriteRune(char)
+			}
 		}
 		advance()
 	}
