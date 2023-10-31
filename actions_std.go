@@ -3072,6 +3072,16 @@ func scriptingActions() {
 			return defaultAnswer
 		},
 	}
+	actions["speak"] = &actionDefinition{
+		identifier: "speaktext",
+		parameters: []parameterDefinition{
+			{
+				name:      "prompt",
+				validType: String,
+				key:       "WFText",
+			},
+		},
+	}
 	actions["chooseFromList"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
