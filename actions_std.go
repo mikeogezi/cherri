@@ -399,7 +399,7 @@ func contactActions() {
 					argumentValue("WFContentItemSortProperty", args, 1),
 					argumentValue("WFContentItemSortOrder", args, 2),
 				}
-			} else if len(args) == 4 {
+			} else {
 				return []plistData{
 					argumentValue("WFContentItemInputParameter", args, 0),
 					argumentValue("WFContentItemSortProperty", args, 1),
