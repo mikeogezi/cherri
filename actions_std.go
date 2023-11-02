@@ -383,6 +383,36 @@ func contactActions() {
 				optional:  true,
 			},
 		},
+		make: func(args []actionArgument) []plistData {
+			if len(args) == 1 {
+				return []plistData{
+					argumentValue("WFContentItemInputParameter", args, 0),
+				}
+			} else if len(args) == 2 {
+				return []plistData{
+					argumentValue("WFContentItemInputParameter", args, 0),
+					argumentValue("WFContentItemSortProperty", args, 1),
+				}
+			} else if len(args) == 3 {
+				return []plistData{
+					argumentValue("WFContentItemInputParameter", args, 0),
+					argumentValue("WFContentItemSortProperty", args, 1),
+					argumentValue("WFContentItemSortOrder", args, 2),
+				}
+			} else if len(args) == 4 {
+				return []plistData{
+					argumentValue("WFContentItemInputParameter", args, 0),
+					argumentValue("WFContentItemSortProperty", args, 1),
+					argumentValue("WFContentItemSortOrder", args, 2),
+					argumentValue("WFContentItemLimitNumber", args, 3),
+					{
+						key:      "WFContentItemLimitEnabled",
+						dataType: Boolean,
+						value:    true,
+					},
+				}
+			}
+		},
 	}
 	actions["emailAddress"] = &actionDefinition{
 		identifier: "email",
