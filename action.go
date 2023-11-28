@@ -21,9 +21,6 @@ var currentAction string
 var currentArguments []actionArgument
 var currentArgumentsSize int
 
-// isMac is set based on if the mac definition is set.
-var isMac = false
-
 // parameterDefinition is used to define an actions parameters and to check against collected argument values.
 type parameterDefinition struct {
 	name         string
@@ -66,11 +63,14 @@ type actionDefinition struct {
 	outputType    tokenType
 	mac           bool
 	minVersion    float64
+	maxVersion    float64
 }
 
 // actions is the data structure that determines every action the compiler knows about.
 // The key determines the identifier of the identifier that must be used in the syntax, it's value defines its behavior, etc. using an actionDefinition.
 var actions map[string]*actionDefinition
+
+var usedActions []string
 
 // libraryDefinition defines a 3rd-party actions library that can be imported using the `#import` syntax.
 type libraryDefinition struct {
@@ -117,28 +117,32 @@ func actionIdentifier() (ident string) {
 
 // actionParameters creates the actions' parameters by injecting the values of the arguments into the defined parameters.
 func actionParameters(arguments []actionArgument) (params []plistData) {
-	if actions[currentAction].make == nil && actions[currentAction].parameters != nil {
+	if actions[currentAction].addParams != nil {
+		params = append(params, actions[currentAction].addParams(arguments)...)
+	}
+	if actions[currentAction].make != nil {
+		params = actions[currentAction].make(arguments)
+		return
+	}
+	if actions[currentAction].parameters != nil {
+		var argumentsSize = len(arguments)
+		if argumentsSize == 0 {
+			return
+		}
 		for i, a := range actions[currentAction].parameters {
-			if len(arguments) <= i || len(arguments) == 0 {
-				break
+			if argumentsSize <= i {
+				return
 			}
 			if arguments[i].valueType == Nil || a.key == "" {
 				continue
 			}
-
 			if a.validType == Variable {
 				params = append(params, variableInput(a.key, arguments[i].value.(string)))
-			} else {
-				params = append(params, argumentValue(a.key, arguments, i))
+				continue
 			}
+
+			params = append(params, argumentValue(a.key, arguments, i))
 		}
-	}
-	if actions[currentAction].make != nil {
-		params = actions[currentAction].make(arguments)
-	}
-	if actions[currentAction].addParams != nil {
-		var addParams = actions[currentAction].addParams(arguments)
-		params = append(params, addParams...)
 	}
 	return
 }
@@ -193,14 +197,6 @@ func checkAction() {
 	var action = actions[currentAction]
 	if len(action.parameters) > 0 {
 		checkRequiredArgs()
-
-		for i, param := range actions[currentAction].parameters {
-			if !param.infinite {
-				continue
-			}
-			checkInfiniteArgs(i)
-			break
-		}
 	}
 	if action.check != nil {
 		action.check(currentArguments)
@@ -212,10 +208,20 @@ func checkAction() {
 			)
 		}
 	}
-	if !isMac && action.mac {
-		parserError(
-			fmt.Sprintf("You've set your Shortcut as non-Mac. Action '%s()' is a Mac only action.", currentAction),
-		)
+	if action.maxVersion != 0 {
+		parserWarning(fmt.Sprintf("Action '%s()' has been deprecated as it was removed or significantly modified.", currentAction))
+		if action.maxVersion < iosVersion {
+			parserError(
+				fmt.Sprintf("Action '%s()' is not available in set minimum version '%.1f'", currentAction, math.Ceil(iosVersion)),
+			)
+		}
+	}
+	if isMac, found := definitions["mac"]; found {
+		if !isMac.(bool) && action.mac {
+			parserError(
+				fmt.Sprintf("You've set your Shortcut as non-Mac. Action '%s()' is a Mac only action", currentAction),
+			)
+		}
 	}
 }
 
@@ -232,7 +238,8 @@ func checkInfiniteArgs(startIdx int) {
 func checkRequiredArgs() {
 	for i, param := range actions[currentAction].parameters {
 		if param.infinite {
-			return
+			checkInfiniteArgs(i)
+			continue
 		}
 		if i+1 > currentArgumentsSize && !param.optional && param.defaultValue == nil {
 			var argIndex = i + 1
@@ -254,8 +261,11 @@ func checkRequiredArgs() {
 
 // checkEnum checks an argument value against a string slice.
 func checkEnum(param parameterDefinition, argument actionArgument) {
-	var value = getArgValue(argument).(string)
-	if !contains(param.enum, value) {
+	var value = getArgValue(argument)
+	if value == nil {
+		return
+	}
+	if !contains(param.enum, value.(string)) {
 		parserError(
 			fmt.Sprintf(
 				"Invalid argument '%s' for %s.\n\n%s",
@@ -309,9 +319,9 @@ func typeCheck(param *parameterDefinition, argument *actionArgument) {
 		if argValueType != param.validType && param.validType != Variable {
 			parserError(fmt.Sprintf("Invalid variable value %v (%s) for argument '%s' (%s).\n%s",
 				argVal,
-				typeName(argValueType),
+				argValueType,
 				param.name,
-				typeName(param.validType),
+				param.validType,
 				generateActionDefinition(*param, false, false),
 			))
 		}
@@ -323,9 +333,9 @@ func typeCheck(param *parameterDefinition, argument *actionArgument) {
 		}
 		parserError(fmt.Sprintf("Invalid value %v (%s) for argument '%s' (%s).\n%s",
 			argVal,
-			typeName(argValueType),
+			argValueType,
 			param.name,
-			typeName(param.validType),
+			param.validType,
 			generateActionDefinition(*param, false, false),
 		))
 	}
@@ -342,9 +352,9 @@ func validActionOutput(field string, validType tokenType, value any) {
 					fmt.Sprintf(
 						"Invalid variable value of action '%v' that outputs type '%s' for argument '%s' of type '%s' in '%s()'",
 						actionIdent+"()",
-						typeName(actionOutputType),
+						actionOutputType,
 						field,
-						typeName(validType),
+						validType,
 						currentAction,
 					),
 				)
@@ -429,48 +439,53 @@ func makeMeasurementUnits() {
 	}
 }
 
-func generateActionDefinition(focus parameterDefinition, restrictions bool, showEnums bool) (definition string) {
+func generateActionDefinition(focus parameterDefinition, restrictions bool, showEnums bool) string {
 	var action = actions[currentAction]
-	definition += currentAction + "("
-	for i, param := range action.parameters {
-		if i != 0 && i < len(action.parameters) {
-			definition += ", "
+	var definition strings.Builder
+	definition.WriteString(fmt.Sprintf("%s(", currentAction))
+	var arguments []string
+	for _, param := range action.parameters {
+		if param.name == focus.name || focus.name == "" {
+			arguments = append(arguments, generateActionParamDefinition(param))
+		} else {
+			arguments = append(arguments, "...")
 		}
-		if focus.name != "" {
-			if param.name == focus.name {
-				definition += generateActionParamDefinition(param)
-			} else {
-				definition += "..."
-			}
-			continue
-		}
-		definition += generateActionParamDefinition(param)
 	}
-	definition += ")"
-	if restrictions && (action.minVersion != 0 || action.mac) {
-		definition += generateActionRestrictions()
+	definition.WriteString(strings.Join(arguments, ", "))
+	definition.WriteRune(')')
+	if restrictions && (action.minVersion != 0 || action.maxVersion != 0 || action.mac) {
+		definition.WriteString(generateActionRestrictions())
 	}
 	if showEnums {
-		definition += generateActionParamEnums(focus)
+		definition.WriteString(generateActionParamEnums(focus))
 	}
-	return definition
+
+	return definition.String()
 }
 
-func generateActionRestrictions() (definition string) {
-	definition += "\nRestrictions: "
+func generateActionRestrictions() string {
+	var definition strings.Builder
+	definition.WriteString("\nRestrictions: ")
+	var restrictions []string
 	if actions[currentAction].minVersion != 0 {
-		definition += fmt.Sprintf("iOS %1.f+", actions[currentAction].minVersion)
+		restrictions = append(restrictions, fmt.Sprintf("iOS %1.f+", actions[currentAction].minVersion))
 	}
-	if actions[currentAction].minVersion != 0 && actions[currentAction].mac {
-		definition += ", "
+	if actions[currentAction].maxVersion != 0 {
+		restrictions = append(restrictions, fmt.Sprintf("Removed or significantly changed after iOS %1.f+", actions[currentAction].maxVersion))
 	}
 	if actions[currentAction].mac {
-		definition += "macOS only"
+		restrictions = append(restrictions, "macOS only")
 	}
-	return
+	definition.WriteString(strings.Join(restrictions, ", "))
+
+	return ansi(definition.String(), red, bold)
 }
 
-func generateActionParamEnums(focus parameterDefinition) (definition string) {
+func generateActionParamEnums(focus parameterDefinition) string {
+	var definition strings.Builder
+	if len(actions[currentAction].parameters) != 0 {
+		definition.WriteRune('\n')
+	}
 	var hasEnum = false
 	for _, param := range actions[currentAction].parameters {
 		if param.enum == nil {
@@ -480,38 +495,41 @@ func generateActionParamEnums(focus parameterDefinition) (definition string) {
 			continue
 		}
 		hasEnum = true
-		definition += "\n\nAvailable " + param.name + "s:\n"
+		definition.WriteString(ansi(fmt.Sprintf("\nAvailable %ss:\n", param.name), yellow))
 		for _, e := range param.enum {
-			definition += "- " + e + "\n"
+			definition.WriteString(fmt.Sprintf("- %s\n", e))
 		}
 	}
 	if hasEnum {
-		definition += "\nNote: Enum values are case-sensitive."
+		definition.WriteString(ansi("\nNote: Enum values are case-sensitive.", bold))
 	}
-	return
+
+	return definition.String()
 }
 
-func generateActionParamDefinition(param parameterDefinition) (definition string) {
+func generateActionParamDefinition(param parameterDefinition) string {
+	var definition strings.Builder
 	if param.enum == nil {
-		definition += typeName(param.validType) + " "
+		definition.WriteString(fmt.Sprintf("%s ", param.validType))
 	} else {
-		definition += "enum "
+		definition.WriteString("enum ")
 	}
 	if param.infinite {
-		definition += "..."
+		definition.WriteString("...")
 	}
 	if param.optional || param.defaultValue != nil {
-		definition += "?"
+		definition.WriteRune('?')
 	}
-	definition += param.name
+	definition.WriteString(param.name)
 	if param.defaultValue != nil {
 		if reflect.TypeOf(param.defaultValue).String() == stringType {
-			definition += fmt.Sprintf(" = \"%v\"", param.defaultValue)
+			definition.WriteString(fmt.Sprintf(" = \"%v\"", param.defaultValue))
 		} else {
-			definition += fmt.Sprintf(" = %v", param.defaultValue)
+			definition.WriteString(fmt.Sprintf(" = %v", param.defaultValue))
 		}
 	}
-	return
+
+	return definition.String()
 }
 
 // makeLibraries makes the library variable, this is where 3rd party action library definitions will start.

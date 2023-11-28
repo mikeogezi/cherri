@@ -22,12 +22,9 @@ type include struct {
 }
 
 var includes []include
+var included []string
 
 func handleIncludes() {
-	if args.Using("auto-inc") {
-		autoInclude()
-		return
-	}
 	if !strings.Contains(contents, "#include") {
 		return
 	}
@@ -68,11 +65,11 @@ func printIncludesDebug() {
 func parseIncludes() {
 	lines = strings.Split(contents, "\n")
 	for l, line := range lines {
-		var lineChars = strings.Split(line, "")
-		if len(lineChars) == 0 {
+		line = strings.Trim(line, " \t\n")
+		if len(line) == 0 {
 			continue
 		}
-		if !startsWith(strings.Trim(line, " "), "#include") {
+		if !startsWith(line, "#include") {
 			advanceUntil('\n')
 			continue
 		}
@@ -166,35 +163,4 @@ func delinquentFile() (errorFilename string, errorLine int, errorCol int) {
 		}
 	}
 	return
-}
-
-// autoInclude looks for files in the same directory and automatically includes them.
-func autoInclude() {
-	var files, readDirErr = os.ReadDir(".")
-	handle(readDirErr)
-	if len(files) == 0 {
-		return
-	}
-	var cherriFiles []string
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		if file.Name() == os.Args[1] {
-			continue
-		}
-		var ext = end(strings.Split(file.Name(), "."))
-		if ext == "cherri" {
-			cherriFiles = append(cherriFiles, file.Name())
-		}
-	}
-	if len(cherriFiles) == 0 {
-		return
-	}
-	lines = strings.Split(contents, "\n")
-	for _, cherriFile := range cherriFiles {
-		var includeLine = fmt.Sprintf("#include \"%s\"", cherriFile)
-		lines = append([]string{includeLine}, lines...)
-	}
-	contents = strings.Join(lines, "\n")
 }

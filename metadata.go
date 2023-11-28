@@ -4,6 +4,8 @@
 
 package main
 
+var definitions map[string]any
+
 var workflowName string
 
 /* Colors */
@@ -82,7 +84,6 @@ func makeWorkflowTypes() {
 		"sharesheet":    "ActionExtension",
 		"notifications": "NCWidget",
 		"sleepmode":     "Sleep",
-		"watchkit":      "WatchKit",
 		"watch":         "Watch",
 		"onscreen":      "ReceivesOnScreenContent",
 	}

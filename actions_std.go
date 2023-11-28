@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 )
 
@@ -823,7 +824,8 @@ func documentActions() {
 			},
 		},
 	}
-	actions["showNote"] = &actionDefinition{
+	actions["openNote"] = &actionDefinition{
+		identifier: "shownote",
 		parameters: []parameterDefinition{
 			{
 				name:      "note",
@@ -979,6 +981,7 @@ func documentActions() {
 		},
 	}
 	actions["connectToServer"] = &actionDefinition{
+		identifier: "connecttoservers",
 		parameters: []parameterDefinition{
 			{
 				name:      "url",
@@ -1002,6 +1005,7 @@ func documentActions() {
 		},
 	}
 	actions["addToBooks"] = &actionDefinition{
+		appIdentifier: "com.apple.iBooksX.openin",
 		parameters: []parameterDefinition{
 			{
 				name:      "input",
@@ -1355,10 +1359,10 @@ func documentActions() {
 		parameters: []parameterDefinition{
 			{
 				name:      "text",
-				validType: Arr,
+				validType: Variable,
 			},
 			{
-				name:      "separator",
+				name:      "glue",
 				validType: String,
 			},
 		},
@@ -1398,6 +1402,7 @@ func documentActions() {
 	}
 	var storageUnits = []string{"bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"}
 	actions["makeSizedDiskImage"] = &actionDefinition{
+		identifier: "makediskimage",
 		parameters: []parameterDefinition{
 			{
 				name:      "name",
@@ -1492,6 +1497,17 @@ func documentActions() {
 			},
 		},
 	}
+	actions["transcribeText"] = &actionDefinition{
+		appIdentifier: "com.apple.ShortcutsActions.TranscribeAudioAction",
+		parameters: []parameterDefinition{
+			{
+				name:      "audioFile",
+				validType: Variable,
+				key:       "audioFile",
+			},
+		},
+		minVersion: 17,
+	}
 }
 
 func locationActions() {
@@ -1524,7 +1540,7 @@ func locationActions() {
 		},
 	}
 	actions["getCurrentWeather"] = &actionDefinition{
-		identifier: "currentconditions",
+		identifier: "weather.currentconditions",
 		parameters: []parameterDefinition{
 			{
 				name:         "location",
@@ -1665,6 +1681,23 @@ func locationActions() {
 }
 
 func mediaActions() {
+	actions["removeBackground"] = &actionDefinition{
+		identifier: "image.removebackground",
+		parameters: []parameterDefinition{
+			{
+				name:      "image",
+				validType: Variable,
+				key:       "WFInput",
+			},
+			{
+				name:         "crop",
+				validType:    Bool,
+				key:          "WFCropToBounds",
+				defaultValue: false,
+				optional:     true,
+			},
+		},
+	}
 	actions["clearUpNext"] = &actionDefinition{}
 	actions["getCurrentSong"] = &actionDefinition{}
 	actions["getLastImport"] = &actionDefinition{identifier: "getlatestphotoimport"}
@@ -1738,38 +1771,26 @@ func mediaActions() {
 	actions["takePhoto"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
+				name:         "count",
+				validType:    Integer,
+				key:          "WFPhotoCount",
+				defaultValue: 1,
+			},
+			{
 				name:         "showPreview",
 				validType:    Bool,
 				key:          "WFCameraCaptureShowPreview",
 				defaultValue: true,
 			},
 		},
-	}
-	actions["takePhotos"] = &actionDefinition{
-		identifier: "takephoto",
-		parameters: []parameterDefinition{
-			{
-				name:      "count",
-				validType: Integer,
-				key:       "WFPhotoCount",
-			},
-		},
 		check: func(args []actionArgument) {
-			var photos = getArgValue(args[0]).(int)
-			if photos == 0 {
+			if len(args) == 0 {
+				return
+			}
+
+			var photos = getArgValue(args[0])
+			if photos == "0" {
 				parserError("Number of photos to take must be greater than zero.")
-			}
-			if photos < 2 {
-				parserError("Use action takePhoto() instead to take only one photo.")
-			}
-		},
-		addParams: func(args []actionArgument) []plistData {
-			return []plistData{
-				{
-					key:      "WFCameraCaptureShowPreview",
-					dataType: Boolean,
-					value:    true,
-				},
 			}
 		},
 	}
@@ -1808,7 +1829,7 @@ func mediaActions() {
 		parameters: []parameterDefinition{
 			{
 				name:      "volume",
-				validType: Integer,
+				validType: String,
 				key:       "WFVolume",
 			},
 		},
@@ -2136,7 +2157,9 @@ func mediaActions() {
 			}
 		},
 	}
-	actions["skipFwd"] = &actionDefinition{}
+	actions["skipFwd"] = &actionDefinition{
+		identifier: "skipforward",
+	}
 	actions["searchAppStore"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
@@ -2190,7 +2213,7 @@ func mediaActions() {
 	}
 	var recordingQualities = []string{"Normal", "Very High"}
 	var recordingStarts = []string{"On Tap", "Immediately"}
-	actions["record"] = &actionDefinition{
+	actions["recordAudio"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
 				name:         "quality",
@@ -2536,11 +2559,42 @@ func mediaActions() {
 }
 
 func scriptingActions() {
+	actions["shutdown"] = &actionDefinition{
+		identifier: "reboot",
+		minVersion: 17,
+	}
+	actions["reboot"] = &actionDefinition{
+		minVersion: 17,
+		addParams: func(args []actionArgument) []plistData {
+			return []plistData{
+				{
+					key:      "WFShutdownMode",
+					dataType: Text,
+					value:    "Restart",
+				},
+			}
+		},
+	}
+	actions["sleep"] = &actionDefinition{
+		minVersion: 17,
+		mac:        true,
+	}
+	actions["displaySleep"] = &actionDefinition{
+		minVersion: 17,
+		mac:        true,
+	}
+	actions["logout"] = &actionDefinition{
+		minVersion: 17,
+		mac:        true,
+	}
+	actions["lockScreen"] = &actionDefinition{
+		minVersion: 17,
+	}
 	actions["number"] = &actionDefinition{
 		parameters: []parameterDefinition{
 			{
 				name:      "number",
-				validType: Integer,
+				validType: Variable,
 				key:       "WFNumberActionNumber",
 			},
 		},
@@ -2589,6 +2643,7 @@ func scriptingActions() {
 	}
 	var deviceDetails = []string{"Device Name", "Device Hostname", "Device Model", "Device Is Watch", "System Version", "Screen Width", "Screen Height", "Current Volume", "Current Brightness", "Current Appearance"}
 	actions["getDeviceDetail"] = &actionDefinition{
+		identifier: "getdevicedetails",
 		parameters: []parameterDefinition{
 			{
 				name:      "detail",
@@ -2602,7 +2657,7 @@ func scriptingActions() {
 		parameters: []parameterDefinition{
 			{
 				name:      "brightness",
-				validType: Integer,
+				validType: String,
 				key:       "WFBrightness",
 			},
 		},
@@ -2812,15 +2867,24 @@ func scriptingActions() {
 			{
 				name:      "url",
 				validType: String,
-				key:       "WFURL",
+				infinite:  true,
 			},
 		},
-		addParams: func(args []actionArgument) []plistData {
+		make: func(args []actionArgument) []plistData {
+			var urlItems []plistData
+			for _, item := range args {
+				urlItems = append(urlItems, paramValue("", item, String, Text))
+			}
 			return []plistData{
 				{
-					key:      "Show-WFURL",
+					key:      "Show-WFURLActionURL",
 					dataType: Boolean,
 					value:    true,
+				},
+				{
+					key:      "WFURL",
+					dataType: Array,
+					value:    urlItems,
 				},
 			}
 		},
@@ -3117,6 +3181,13 @@ func scriptingActions() {
 				optional:     true,
 				defaultValue: false,
 			},
+			{
+				name:         "selectAll",
+				key:          "WFChooseFromListActionSelectAll",
+				validType:    Bool,
+				optional:     true,
+				defaultValue: false,
+			},
 		},
 	}
 	actions["typeOf"] = &actionDefinition{
@@ -3219,7 +3290,7 @@ func scriptingActions() {
 			},
 		},
 		check: func(args []actionArgument) {
-			replaceAppID(args, 0)
+			replaceAppIDs(args)
 		},
 		make: func(args []actionArgument) []plistData {
 			return []plistData{
@@ -3238,12 +3309,12 @@ func scriptingActions() {
 		identifier: "hide.app",
 		parameters: []parameterDefinition{
 			{
-				name:      "appId",
+				name:      "appID",
 				validType: String,
 			},
 		},
 		check: func(args []actionArgument) {
-			replaceAppID(args, 0)
+			replaceAppIDs(args)
 		},
 		make: func(args []actionArgument) []plistData {
 			return []plistData{
@@ -3278,10 +3349,7 @@ func scriptingActions() {
 				{
 					key:      "WFAppsExcept",
 					dataType: Array,
-					value: plistData{
-						dataType: Dictionary,
-						value:    apps(args),
-					},
+					value:    apps(args),
 				},
 			}
 		},
@@ -3290,12 +3358,12 @@ func scriptingActions() {
 		identifier: "quit.app",
 		parameters: []parameterDefinition{
 			{
-				name:      "appId",
+				name:      "appID",
 				validType: String,
 			},
 		},
 		check: func(args []actionArgument) {
-			replaceAppID(args, 0)
+			replaceAppIDs(args)
 		},
 		make: func(args []actionArgument) []plistData {
 			return []plistData{
@@ -3330,10 +3398,7 @@ func scriptingActions() {
 				{
 					key:      "WFAppsExcept",
 					dataType: Array,
-					value: plistData{
-						dataType: Dictionary,
-						value:    apps(args),
-					},
+					value:    apps(args),
 				},
 			}
 		},
@@ -3342,12 +3407,12 @@ func scriptingActions() {
 		identifier: "quit.app",
 		parameters: []parameterDefinition{
 			{
-				name:      "appId",
+				name:      "appID",
 				validType: String,
 			},
 		},
 		check: func(args []actionArgument) {
-			replaceAppID(args, 0)
+			replaceAppIDs(args)
 		},
 		make: func(args []actionArgument) []plistData {
 			return []plistData{
@@ -3387,7 +3452,7 @@ func scriptingActions() {
 				{
 					key:      "WFAppsExcept",
 					dataType: Array,
-					value:    []string{plistValue(Dictionary, apps(args))},
+					value:    apps(args),
 				},
 				{
 					key:      "WFAskToSaveChanges",
@@ -3418,8 +3483,8 @@ func scriptingActions() {
 			},
 		},
 		check: func(args []actionArgument) {
-			replaceAppID(args, 0)
-			replaceAppID(args, 1)
+			args[0].value = replaceAppID(getArgValue(args[0]).(string))
+			args[1].value = replaceAppID(getArgValue(args[1]).(string))
 			if len(args) > 2 {
 				switch args[2].value {
 				case "half":
@@ -4101,19 +4166,10 @@ func scriptingActions() {
 		identifier: "cellulardata.set",
 		parameters: []parameterDefinition{
 			{
-				name:      "status",
-				key:       "OnValue",
-				validType: Bool,
-			},
-		},
-	}
-	actions["setCellularVoice"] = &actionDefinition{
-		identifier: "cellular.rat.set",
-		parameters: []parameterDefinition{
-			{
-				name:      "status",
-				key:       "OnValue",
-				validType: Bool,
+				name:         "status",
+				key:          "OnValue",
+				validType:    Bool,
+				defaultValue: true,
 			},
 		},
 	}
@@ -4526,6 +4582,7 @@ func webActions() {
 	}
 	var urlComponents = []string{"Scheme", "User", "Password", "Host", "Port", "Path", "Query", "Fragment"}
 	actions["getURLDetail"] = &actionDefinition{
+		identifier: "geturlcomponent",
 		parameters: []parameterDefinition{
 			{
 				name:      "url",
@@ -4625,6 +4682,7 @@ func webActions() {
 		mac: true,
 	}
 	actions["runJSAutomation"] = &actionDefinition{
+		identifier: "runjavascriptforautomation",
 		parameters: []parameterDefinition{
 			{
 				name:      "input",
@@ -5080,20 +5138,48 @@ func changeCase(textCase string, args []actionArgument) []plistData {
 }
 
 func textParts(args []actionArgument) []plistData {
-	return []plistData{
+	var data = []plistData{
 		{
 			key:      "Show-text",
 			dataType: Boolean,
 			value:    true,
 		},
-		{
+
+		argumentValue("text", args, 0),
+	}
+
+	var separator = getArgValue(args[1])
+	switch {
+	case separator == " ":
+		data = append(data, plistData{
 			key:      "WFTextSeparator",
 			dataType: Text,
-			value:    "Custom",
-		},
-		argumentValue("text", args, 0),
-		argumentValue("WFTextCustomSeparator", args, 1),
+			value:    "Spaces",
+		})
+	case separator == "\n":
+		data = append(data, plistData{
+			key:      "WFTextSeparator",
+			dataType: Text,
+			value:    "New Lines",
+		})
+	case separator == "" && currentAction == "splitText":
+		data = append(data, plistData{
+			key:      "WFTextSeparator",
+			dataType: Text,
+			value:    "Every Character",
+		})
+	default:
+		data = append(data,
+			plistData{
+				key:      "WFTextSeparator",
+				dataType: Text,
+				value:    "Custom",
+			},
+			argumentValue("WFTextCustomSeparator", args, 1),
+		)
 	}
+
+	return data
 }
 
 func replaceText(caseSensitive bool, regExp bool, args []actionArgument) []plistData {
@@ -5159,34 +5245,45 @@ func makeAppIds() {
 }
 
 func apps(args []actionArgument) (apps []plistData) {
-	for a := range args {
-		apps = append(apps, argumentValue("BundleIdentifier", args, a))
+	for _, arg := range args {
+		apps = append(apps, plistData{
+			dataType: Dictionary,
+			value: []plistData{
+				{
+					key:      "BundleIdentifier",
+					dataType: Text,
+					value:    arg.value,
+				},
+				{
+					key:      "TeamIdentifier",
+					dataType: Text,
+					value:    "0000000000",
+				},
+			},
+		})
 	}
 	return
 }
 
-func replaceAppID(args []actionArgument, idx int) {
-	if len(appIds) == 0 {
-		makeAppIds()
+func replaceAppID(id string) string {
+	makeAppIds()
+	if appID, found := appIds[id]; found {
+		return appID
 	}
-	if len(args) >= 1 {
-		var id = getArgValue(args[idx]).(string)
-		if appId, found := appIds[id]; found {
-			args[idx].value = appId
-		}
+
+	var regex = regexp.MustCompile(`^([A-Za-z][A-Za-z\d_]*\.)+[A-Za-z][A-Za-z\d_]*$`)
+	var matches = regex.FindAllString(id, -1)
+	if len(matches) == 0 {
+		parserError(fmt.Sprintf("Invalid app bundle identifier: %s", id))
 	}
+	return id
 }
 
 func replaceAppIDs(args []actionArgument) {
-	if len(appIds) == 0 {
-		makeAppIds()
-	}
 	if len(args) >= 1 {
 		for a := range args {
 			var id = getArgValue(args[a]).(string)
-			if appId, found := appIds[id]; found {
-				args[a].value = appId
-			}
+			args[a].value = replaceAppID(id)
 		}
 	}
 }
