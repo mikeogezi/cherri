@@ -251,7 +251,7 @@ func collectVariableValue(constant bool, valueType *tokenType, value *any, coerc
 		return
 	}
 
-	var stringValue = fmt.Sprintf("%v", *value)
+	var stringValue = fmt.Sprintf("%s", *value)
 	if !strings.ContainsAny(stringValue, "[]") && !strings.Contains(stringValue, ".") {
 		return
 	}
@@ -281,6 +281,11 @@ func collectValue(valueType *tokenType, value *any, until rune) {
 		advance()
 		*valueType = String
 		*value = collectString()
+
+		var stringValue = fmt.Sprintf("%s", *value)
+		if strings.ContainsAny(stringValue, "{}") {
+			checkInlineVars(&stringValue)
+		}
 	case char == '[':
 		advance()
 		*valueType = Arr
@@ -301,11 +306,29 @@ func collectValue(valueType *tokenType, value *any, until rune) {
 	case strings.Contains(ahead, "("):
 		*valueType = Action
 		_, *value = collectAction()
-	case containsTokens(ahead, Plus, Minus, Multiply, Divide, Modulus):
+	case containsTokens(&ahead, Plus, Minus, Multiply, Divide, Modulus):
 		*valueType = Expression
 		*value = collectUntil(until)
 	default:
 		collectReference(valueType, value, &until)
+	}
+}
+
+func checkInlineVars(value *string) {
+	var collectVarRegex = regexp.MustCompile(`\{(.*?)(?:\[(.*?)])?(?:\.(.*?))?}`)
+	var matches = collectVarRegex.FindAllStringSubmatch(*value, -1)
+	if matches == nil {
+		return
+	}
+
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		var identifier = match[1]
+		if !validReference(identifier) {
+			parserError(fmt.Sprintf("Inline var '%s' does not exist!", identifier))
+		}
 	}
 }
 
@@ -546,15 +569,7 @@ func collectDefinition() {
 		outputPath = relativePath + workflowName + ".shortcut"
 	case tokenAhead(Color):
 		advance()
-		var collectColor = collectUntil('\n')
-		makeColors()
-		collectColor = strings.ToLower(collectColor)
-		if color, found := colors[collectColor]; found {
-			iconColor = color
-		} else {
-			var list = makeKeyList("Available icon colors:", colors)
-			parserError(fmt.Sprintf("Invalid icon color '%s'\n\n%s", collectColor, list))
-		}
+		collectColorDefinition()
 	case tokenAhead(Glyph):
 		advance()
 		collectGlyphDefinition()
@@ -566,20 +581,7 @@ func collectDefinition() {
 		outputs = collectContentItemTypes()
 	case tokenAhead(From):
 		advance()
-		makeWorkflowTypes()
-		var collectWorkflowTypes = collectUntil('\n')
-		if collectWorkflowTypes != "" {
-			var definedWorkflowTypes = strings.Split(collectWorkflowTypes, ",")
-			for _, wt := range definedWorkflowTypes {
-				wt = strings.Trim(wt, " ")
-				if wtype, found := workflowTypes[wt]; found {
-					types = append(types, wtype)
-				} else {
-					var list = makeKeyList("Available workflow types:", workflowTypes)
-					parserError(fmt.Sprintf("Invalid workflow type '%s'\n\n%s", wt, list))
-				}
-			}
-		}
+		collectWorkflowType()
 	case tokenAhead(NoInput):
 		advance()
 		collectNoInputDefinition()
@@ -598,10 +600,39 @@ func collectDefinition() {
 		makeVersions()
 		if version, found := versions[collectVersion]; found {
 			minVersion = version
-			iosVersion, _ = strconv.ParseFloat(collectVersion, 8)
+			iosVersion, _ = strconv.ParseFloat(collectVersion, 32)
 		} else {
 			var list = makeKeyList("Available versions:", versions)
 			parserError(fmt.Sprintf("Invalid minimum version '%s'\n\n%s", collectVersion, list))
+		}
+	}
+}
+
+func collectColorDefinition() {
+	var collectColor = collectUntil('\n')
+	makeColors()
+	collectColor = strings.ToLower(collectColor)
+	if color, found := colors[collectColor]; found {
+		iconColor = color
+	} else {
+		var list = makeKeyList("Available icon colors:", colors)
+		parserError(fmt.Sprintf("Invalid icon color '%s'\n\n%s", collectColor, list))
+	}
+}
+
+func collectWorkflowType() {
+	makeWorkflowTypes()
+	var collectWorkflowTypes = collectUntil('\n')
+	if collectWorkflowTypes != "" {
+		var definedWorkflowTypes = strings.Split(collectWorkflowTypes, ",")
+		for _, wt := range definedWorkflowTypes {
+			wt = strings.Trim(wt, " ")
+			if wtype, found := workflowTypes[wt]; found {
+				types = append(types, wtype)
+			} else {
+				var list = makeKeyList("Available workflow types:", workflowTypes)
+				parserError(fmt.Sprintf("Invalid workflow type '%s'\n\n%s", wt, list))
+			}
 		}
 	}
 }
@@ -945,6 +976,8 @@ func collectMenuItem() {
 func collectEndStatement() {
 	advance()
 	if tokenAhead(Else) {
+		addNothing()
+
 		advance()
 		if _, ok := groupingUUIDs[groupingIdx]; !ok {
 			parserError("Else has no starting if statement.")
@@ -1021,7 +1054,8 @@ func collectInteger() string {
 }
 
 func collectIntegerValue(valueType *tokenType, value *any, until *rune) {
-	if !containsTokens(lookAheadUntil(*until), Plus, Minus, Multiply, Divide, Modulus) {
+	var ahead = lookAheadUntil(*until)
+	if !containsTokens(&ahead, Plus, Minus, Multiply, Divide, Modulus) {
 		var integer = collectInteger()
 		*valueType = Integer
 		*value = integer
@@ -1231,18 +1265,9 @@ func tokenAhead(token tokenType) bool {
 		return true
 	}
 	for i, tokenChar := range token {
-		if tokenChar == '\t' || tokenChar == '\n' {
-			continue
-		}
-
 		if (i == 0 && unicode.ToLower(char) != tokenChar) || next(i) != tokenChar {
 			return false
 		}
-	}
-
-	if tokenLen == 1 {
-		advance()
-		return true
 	}
 
 	advanceTimes(tokenLen)
@@ -1259,18 +1284,9 @@ func tokensAhead(tokens ...tokenType) bool {
 	return false
 }
 
-func containsTokens(str string, v ...tokenType) bool {
+func containsTokens(str *string, v ...tokenType) bool {
 	for _, aheadToken := range v {
-		if strings.Contains(str, string(aheadToken)) {
-			return true
-		}
-	}
-	return false
-}
-
-func tokensOccur(str *string, v ...tokenType) bool {
-	for _, aheadToken := range v {
-		if strings.Count(*str, string(aheadToken)) != 0 {
+		if strings.Contains(*str, string(aheadToken)) {
 			return true
 		}
 	}
