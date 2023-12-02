@@ -267,6 +267,9 @@ func checkEnum(param parameterDefinition, argument actionArgument) {
 	if value == nil {
 		return
 	}
+	if reflect.TypeOf(value).String() != "string" {
+		return
+	}
 	if !contains(param.enum, value.(string)) {
 		parserError(
 			fmt.Sprintf(
