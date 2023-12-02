@@ -28,6 +28,7 @@ type parameterDefinition struct {
 	key          string
 	defaultValue any
 	enum         []string
+	examples     []string
 	optional     bool
 	infinite     bool
 }
@@ -56,6 +57,7 @@ type paramsFunc func(args []actionArgument) []plistData
 type actionDefinition struct {
 	identifier    string
 	appIdentifier string
+	description   string
 	parameters    []parameterDefinition
 	check         argsFunc
 	make          paramsFunc
