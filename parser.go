@@ -237,6 +237,8 @@ func lookAheadUntil(until rune) string {
 	return strings.Trim(strings.ToLower(ahead.String()), " \t\n")
 }
 
+var variableValueRegex = regexp.MustCompile(`^(.*?)(?:\[(.*?)])?(?:\.(.*?))?$`)
+
 func collectVariableValue(constant bool, valueType *tokenType, value *any, coerce *string, getAs *string) {
 	collectValue(valueType, value, '\n')
 
@@ -256,8 +258,7 @@ func collectVariableValue(constant bool, valueType *tokenType, value *any, coerc
 		return
 	}
 
-	var regex = regexp.MustCompile(`^(.*?)(?:\[(.*?)])?(?:\.(.*?))?$`)
-	var matches = regex.FindAllStringSubmatch(stringValue, -1)
+	var matches = variableValueRegex.FindAllStringSubmatch(stringValue, -1)
 	for _, m := range matches {
 		*value = m[1]
 		if m[2] != "" {
@@ -314,8 +315,9 @@ func collectValue(valueType *tokenType, value *any, until rune) {
 	}
 }
 
+var collectVarRegex = regexp.MustCompile(`\{(.*?)(?:\[(.*?)])?(?:\.(.*?))?}`)
+
 func checkInlineVars(value *string) {
-	var collectVarRegex = regexp.MustCompile(`\{(.*?)(?:\[(.*?)])?(?:\.(.*?))?}`)
 	var matches = collectVarRegex.FindAllStringSubmatch(*value, -1)
 	if matches == nil {
 		return
@@ -658,7 +660,7 @@ func collectGlyphDefinition() {
 func collectNoInputDefinition() {
 	switch {
 	case tokenAhead(StopWith):
-		advance()
+		advanceTimes(2)
 		var stopWithError = collectString()
 		noInput = noInputParams{
 			name: "WFWorkflowNoInputBehaviorShowError",
@@ -1380,7 +1382,15 @@ func printTokens(tokens []token) {
 
 func parserWarning(message string) {
 	var errorFilename, errorLine, errorCol = delinquentFile()
-	fmt.Println(ansi("\nWarning: ", yellow, bold) + fmt.Sprintf("%s %s:%d:%d", message, errorFilename, errorLine, errorCol))
+	var warning = fmt.Sprintf("%s %s", ansi("\nWarning:", yellow, bold), message)
+
+	if !args.Using("no-ansi") {
+		warning += fmt.Sprintf(" %s:%d:%d", errorFilename, errorLine, errorCol)
+	} else {
+		warning += fmt.Sprintf(" (%d:%d)", errorLine, errorCol)
+	}
+
+	fmt.Println(warning + "\n")
 }
 
 func makeKeyList(title string, list map[string]string) string {

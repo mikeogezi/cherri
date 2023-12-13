@@ -407,7 +407,18 @@ func contactActions() {
 				infinite:  true,
 			},
 		},
+		check: func(args []actionArgument) {
+			if len(args) > 1 && args[0].valueType == Variable {
+				parserError("Shortcuts only allows one variable for an email address.")
+			}
+		},
 		make: func(args []actionArgument) []plistData {
+			if args[0].valueType == Variable {
+				return []plistData{
+					argumentValue("WFEmailAddress", args, 0),
+				}
+			}
+
 			return []plistData{
 				contactValue("WFEmailAddress", emailAddress, args),
 			}
@@ -421,7 +432,17 @@ func contactActions() {
 				infinite:  true,
 			},
 		},
+		check: func(args []actionArgument) {
+			if len(args) > 1 && args[0].valueType == Variable {
+				parserError("Shortcuts only allows one variable for a phone number.")
+			}
+		},
 		make: func(args []actionArgument) []plistData {
+			if args[0].valueType == Variable {
+				return []plistData{
+					argumentValue("WFPhoneNumber", args, 0),
+				}
+			}
 			return []plistData{
 				contactValue("WFPhoneNumber", phoneNumber, args),
 			}
@@ -3685,10 +3706,18 @@ func scriptingActions() {
 			var listItems []plistData
 			for _, item := range args {
 				listItems = append(listItems, plistData{
-					dataType: Text,
-					value:    item.value,
+					dataType: Dictionary,
+					value: []plistData{
+						{
+							key:      "WFItemType",
+							dataType: Number,
+							value:    0,
+						},
+						paramValue("WFValue", item, String, Text),
+					},
 				})
 			}
+
 			return []plistData{
 				{
 					key:      "WFItems",
@@ -5155,8 +5184,8 @@ func roundingValue(mode string, args []actionArgument) []plistData {
 	}
 }
 
-func adjustDate(operation string, unit string, args []actionArgument) []plistData {
-	var adjustDateParams = []plistData{
+func adjustDate(operation string, unit string, args []actionArgument) (adjustDateParams []plistData) {
+	adjustDateParams = []plistData{
 		{
 			key:      "WFAdjustOperation",
 			dataType: Text,
@@ -5164,31 +5193,40 @@ func adjustDate(operation string, unit string, args []actionArgument) []plistDat
 		},
 		argumentValue("WFDate", args, 0),
 	}
-	if unit != "" {
-		adjustDateParams = append(adjustDateParams, plistData{
-			key:      "WFDuration",
-			dataType: Dictionary,
-			value: []plistData{
-				{
-					key:      "Value",
-					dataType: Dictionary,
-					value: []plistData{
-						{
-							key:      "Unit",
-							dataType: Text,
-							value:    unit,
-						},
-						argumentValue("Magnitude", args, 1),
+	if unit == "" {
+		return adjustDateParams
+	}
+
+	var magnitudeValue = argumentValue("Magnitude", args, 1)
+	if magnitudeValue.dataType == Dictionary {
+		var value = magnitudeValue.value.([]plistData)
+		magnitudeValue.dataType = Dictionary
+		magnitudeValue.value = value[0].value
+	}
+	adjustDateParams = append(adjustDateParams, plistData{
+		key:      "WFDuration",
+		dataType: Dictionary,
+		value: []plistData{
+			{
+				key:      "Value",
+				dataType: Dictionary,
+				value: []plistData{
+					{
+						key:      "Unit",
+						dataType: Text,
+						value:    unit,
 					},
-				},
-				{
-					key:      "WFSerializationType",
-					dataType: Text,
-					value:    "WFQuantityFieldValue",
+					magnitudeValue,
 				},
 			},
-		})
-	}
+			{
+				key:      "WFSerializationType",
+				dataType: Text,
+				value:    "WFQuantityFieldValue",
+			},
+		},
+	})
+
 	return adjustDateParams
 }
 
@@ -5338,14 +5376,15 @@ func apps(args []actionArgument) (apps []plistData) {
 	return
 }
 
+var appIdentifierRegex = regexp.MustCompile(`^([A-Za-z][A-Za-z\d_]*\.)+[A-Za-z][A-Za-z\d_]*$`)
+
 func replaceAppID(id string) string {
 	makeAppIds()
 	if appID, found := appIds[id]; found {
 		return appID
 	}
 
-	var regex = regexp.MustCompile(`^([A-Za-z][A-Za-z\d_]*\.)+[A-Za-z][A-Za-z\d_]*$`)
-	var matches = regex.FindAllString(id, -1)
+	var matches = appIdentifierRegex.FindAllString(id, -1)
 	if len(matches) == 0 {
 		parserError(fmt.Sprintf("Invalid app bundle identifier: %s", id))
 	}
