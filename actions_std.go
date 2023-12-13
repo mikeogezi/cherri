@@ -34,6 +34,7 @@ func standardActions() {
 	sharingActions()
 	webActions()
 	builtinActions()
+	commandoActions()
 }
 
 func calendarActions() {
