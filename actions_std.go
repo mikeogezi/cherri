@@ -352,6 +352,50 @@ func calendarActions() {
 	}
 }
 
+func filterContactByXandY(contactDetail, abcSortOrder string) *actionDefinition {
+	return &actionDefinition{
+		identifier: "filter.contacts",
+		parameters: []parameterDefinition{
+			{
+				name:      "contacts",
+				validType: Variable,
+				key:       "WFContentItemInputParameter",
+			},
+			{
+				name:      "limit",
+				validType: Integer,
+				key:       "WFContentItemLimitNumber",
+				optional:  true,
+			},
+		},
+		addParams: func(args []actionArgument) []plistData {
+			var plistDataArray []plistData = []plistData{
+				{
+					key:      "WFContentItemSortProperty",
+					dataType: Text,
+					value:    contactDetail,
+				},
+			}
+
+			plistDataArray = append(plistDataArray, plistData{
+				key:      "WFContentItemSortOrder",
+				dataType: Text,
+				value:    abcSortOrder,
+			})
+
+			if len(args) == 2 {
+				plistDataArray = append(plistDataArray, plistData{
+					key:      "WFContentItemLimitEnabled",
+					dataType: Boolean,
+					value:    true,
+				})
+			}
+
+			return plistDataArray
+		},
+	}
+}
+
 func contactActions() {
 	var contactDetails = []string{"First Name", "Middle Name", "Last Name", "Birthday", "Prefix", "Suffix", "Nickname", "Phonetic First Name", "Phonetic Last Name", "Phonetic Middle Name", "Company", "Job Title", "Department", "File Extension", "Creation Date", "File Path", "Last Modified Date", "Name", "Random"}
 	var abcSortOrders = []string{"A to Z", "Z to A"}
@@ -398,6 +442,14 @@ func contactActions() {
 			return []plistData{}
 		},
 	}
+
+	for _, contactDetail := range contactDetails {
+		for _, abcSortOrder := range abcSortOrders {
+			var name = "filterContactsBy" + strings.ReplaceAll(contactDetail, " ", "") + "And" + strings.ReplaceAll(abcSortOrder, " ", "")
+			actions[name] = filterContactByXandY(contactDetail, abcSortOrder)
+		}
+	}
+
 	actions["emailAddress"] = &actionDefinition{
 		identifier: "email",
 		parameters: []parameterDefinition{
@@ -615,18 +667,25 @@ func contactActions() {
 			},
 		},
 		addParams: func(args []actionArgument) []plistData {
-			if len(args) == 3 {
-				return []plistData{
-					contactValue("WFContactPhoneNumbers", phoneNumber, []actionArgument{args[2]}),
+			var plistDataArray = []plistData{}
+
+			if len(args) >= 3 {
+				if args[2].valueType == Variable {
+					plistDataArray = append(plistDataArray, argumentValue("WFContactPhoneNumbers", args, 2))
+				} else {
+					plistDataArray = append(plistDataArray, contactValue("WFContactPhoneNumbers", phoneNumber, []actionArgument{args[2]}))
 				}
 			}
-			if len(args) > 3 {
-				return []plistData{
-					contactValue("WFContactPhoneNumbers", phoneNumber, []actionArgument{args[2]}),
-					contactValue("WFContactEmails", emailAddress, []actionArgument{args[3]}),
+
+			if len(args) >= 4 {
+				if args[3].valueType == Variable {
+					plistDataArray = append(plistDataArray, argumentValue("WFContactEmails", args, 3))
+				} else {
+					plistDataArray = append(plistDataArray, contactValue("WFContactEmails", emailAddress, []actionArgument{args[3]}))
 				}
 			}
-			return []plistData{}
+
+			return plistDataArray
 		},
 	}
 	actions["updateContact"] = &actionDefinition{
@@ -3911,9 +3970,11 @@ func scriptingActions() {
 			},
 		},
 		check: func(args []actionArgument) {
-			args[1] = actionArgument{
-				valueType: Integer,
-				value:     incrementValue(args[1].value),
+			if args[1].valueType != Variable {
+				args[1] = actionArgument{
+					valueType: Integer,
+					value:     incrementValue(args[1].value),
+				}
 			}
 		},
 		addParams: func(args []actionArgument) []plistData {
@@ -3946,13 +4007,17 @@ func scriptingActions() {
 			},
 		},
 		check: func(args []actionArgument) {
-			args[1] = actionArgument{
-				valueType: Integer,
-				value:     incrementValue(args[1].value),
+			if args[1].valueType != Variable {
+				args[1] = actionArgument{
+					valueType: Integer,
+					value:     incrementValue(args[1].value),
+				}
 			}
-			args[2] = actionArgument{
-				valueType: Integer,
-				value:     incrementValue(args[2].value),
+			if args[2].valueType != Variable {
+				args[2] = actionArgument{
+					valueType: Integer,
+					value:     incrementValue(args[2].value),
+				}
 			}
 		},
 		addParams: func(args []actionArgument) []plistData {
